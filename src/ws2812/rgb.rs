@@ -24,7 +24,7 @@ impl Rgb {
 
     fn bit_to_spi(input: bool) -> [u8; 3] {
         if input {
-            [0xFF, 0xFF, 0x00]
+            [0xFF, 0xFE, 0x00]
         } else {
             [0xFE, 0x00, 0x00]
         }

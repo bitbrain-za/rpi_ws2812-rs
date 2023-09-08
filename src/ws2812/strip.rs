@@ -5,7 +5,7 @@ use rppal::spi::{Bus, Mode, SlaveSelect, Spi};
 pub struct Strip {
     pub spi: Spi,
     pub count: usize,
-    pub pages: Vec<Vec<Rgb>>,
+    pages: Vec<Vec<Rgb>>,
     current_page: usize,
 }
 
@@ -36,6 +36,25 @@ impl Strip {
         }
         self.pages[page] = Vec::new();
         self.pages[page].extend_from_slice(&vec![rgb.clone(); self.count]);
+        self.set_led(page, 0, &Rgb::new(0, 0, 0))?;
+        Ok(())
+    }
+
+    pub fn set_page(&mut self, page: usize, pixels: Vec<Rgb>) -> Result<()> {
+        if self.pages.len() <= page {
+            return Err(Ws2812Error::PageOutOfRange(format!(
+                "Page {} is out of range",
+                page
+            )));
+        }
+        if pixels.len() != self.count {
+            return Err(Ws2812Error::LedOutOfRange(format!(
+                "Led count {} does not match page size {}",
+                pixels.len(),
+                self.count
+            )));
+        }
+        self.pages[page] = pixels;
         Ok(())
     }
 
@@ -75,6 +94,8 @@ impl Strip {
                 e
             )))
         } else {
+            let buffer = vec![0u8; 200];
+            self.spi.write(&buffer).unwrap();
             self.current_page = page;
             Ok(())
         }
