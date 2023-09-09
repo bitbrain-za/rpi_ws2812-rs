@@ -171,7 +171,15 @@ impl LightStrip {
             StripMode::Off => {
                 let _ = self.strip.clear(0);
             }
-            StripMode::Effect(effect) => {}
+            StripMode::Effect(effect) => {
+                if let Ok(effect) = EffectsEnum::from_str(&effect) {
+                    let pixels = LightStrip::get_effect(&effect)
+                        .iter_mut()
+                        .map(|x| Rgb::new(x.red, x.green, x.blue))
+                        .collect::<Vec<Rgb>>();
+                    self.strip.set_page(0, pixels).expect("Error setting page");
+                }
+            }
             StripMode::Colour(r, g, b) => {
                 let _ = self.strip.fill(0, &Rgb::new(r, g, b));
             }
@@ -181,7 +189,7 @@ impl LightStrip {
         self.strip.refresh(0).expect("Error displaying LED");
     }
 
-    fn get_effect(index: EffectsEnum) -> Vec<Srgb<u8>> {
+    fn get_effect(index: &EffectsEnum) -> Vec<Srgb<u8>> {
         match index {
             EffectsEnum::Bounce => BOUNCE.lock().unwrap().next().unwrap(),
             EffectsEnum::Rainbow => RAINBOW.lock().unwrap().next().unwrap(),
