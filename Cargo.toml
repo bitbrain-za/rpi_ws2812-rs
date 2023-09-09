@@ -18,6 +18,7 @@ tokio = { version = "1", features = ["full"] }
 uuid = { version = "1.4.1", features = ["v4"] }
 smart_led_effects = { path = "../smart_led_effects" }
 lazy_static = "1.4.0"
+colortemp = "0.1.0"
 
 # [build]
 # target = "armv7-unknown-linux-musleabihf"

@@ -2,12 +2,11 @@ use crate::config;
 use crate::homeassistant::mqtt::{LightStripMqtt, StripMode};
 use crate::ws2812::{Rgb, Strip};
 use lazy_static::lazy_static;
+use palette::FromColor;
 use rumqttc::{AsyncClient, MqttOptions, QoS};
-use serde::{Deserialize, Serialize};
 use smart_led_effects::strip::Effect;
 use smart_led_effects::{strip, Srgb};
 use std::default::Default;
-use std::fmt;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
@@ -21,37 +20,9 @@ const UPDATE_INTERVAL: Duration = Duration::from_millis(100);
 pub struct LightStrip {
     mqtt_options: MqttOptions,
     stop: AtomicBool,
-    state: LightState,
     ha: LightStripMqtt,
     strip: Strip,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct LightState {
-    pub state: String,
-    pub brightness: u8,
-    pub rgb: (u8, u8, u8),
-    pub color_temp: u16,
-    pub effect: String,
-}
-
-impl Default for LightState {
-    fn default() -> Self {
-        LightState {
-            state: "OFF".to_string(),
-            brightness: 255,
-            rgb: (255, 255, 255),
-            color_temp: 215,
-            effect: "none".to_string(),
-        }
-    }
-}
-
-impl fmt::Display for LightState {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let s = serde_json::to_string_pretty(&self).unwrap();
-        write!(f, "{}", s)
-    }
+    state: StripMode,
 }
 
 impl LightStrip {
@@ -80,9 +51,9 @@ impl LightStrip {
         LightStrip {
             mqtt_options,
             stop: AtomicBool::new(false),
-            state: LightState::default(),
             ha,
             strip,
+            state: StripMode::Off,
         }
     }
 
@@ -121,9 +92,10 @@ impl LightStrip {
 
                 match StripMode::from_str(&message) {
                     Ok(state) => {
-                        LightStrip::handle_state_change(&state).await;
-                        let resp = state.to_state_message(&ha2);
-                        LightStrip::publish(&state_updater, &resp.0, &resp.1).await;
+                        if let Some(state) = LightStrip::handle_state_change(&state) {
+                            let resp = state.to_state_message(&ha2);
+                            LightStrip::publish(&state_updater, &resp.0, &resp.1).await;
+                        }
                     }
                     Err(e) => {
                         log::error!("Error parsing message: {:?}", e);
@@ -159,15 +131,52 @@ impl LightStrip {
         }
     }
 
-    async fn handle_state_change(state: &StripMode) {
+    fn handle_state_change(state: &StripMode) -> Option<StripMode> {
         log::debug!("State change: {}", state);
+
         let mut mode = MODE.lock().unwrap();
-        *mode = state.clone();
+        let mut last_mode = LAST_MODE.lock().unwrap();
+
+        if let StripMode::Brightness(brightness) = state {
+            if let StripMode::Effect(_) = *mode {
+                return None;
+            }
+
+            if let StripMode::Colour(r, g, b) = *mode {
+                log::warn!("Modifying MODE");
+                let mut hsv = palette::Hsv::from_color(Srgb::<u8>::new(r, g, b).into_format());
+                let new_v: f32 = *brightness as f32 / 255.0;
+                hsv.value = new_v;
+                let srgb = Srgb::from_color(hsv).into_format::<u8>();
+
+                *mode = StripMode::Colour(srgb.red, srgb.green, srgb.blue);
+            } else if let StripMode::Colour(r, g, b) = *last_mode {
+                log::warn!("Using LAST_MODE");
+                let mut hsv = palette::Hsv::from_color(Srgb::<u8>::new(r, g, b).into_format());
+                let new_v: f32 = hsv.value * (*brightness as f32 / 255.0);
+                hsv.value = new_v;
+                let srgb = Srgb::from_color(hsv).into_format::<u8>();
+                *mode = StripMode::Colour(srgb.red, srgb.green, srgb.blue);
+            }
+        } else if let StripMode::On = state {
+            *mode = last_mode.clone();
+        } else {
+            *mode = state.clone();
+        }
+
+        if *mode != StripMode::Off {
+            *last_mode = mode.clone();
+        }
+
+        return Some(mode.clone());
     }
 
     async fn implement_state(&mut self) {
         let mode = MODE.lock().unwrap().clone();
         match mode {
+            StripMode::On => {
+                let _ = self.strip.fill(0, &Rgb::new(0, 0, 255));
+            }
             StripMode::Off => {
                 let _ = self.strip.clear(0);
             }
@@ -184,7 +193,6 @@ impl LightStrip {
                 let _ = self.strip.fill(0, &Rgb::new(r, g, b));
             }
             StripMode::Brightness(brightness) => {}
-            StripMode::ColourTemp(color_temp) => {}
         }
         self.strip.refresh(0).expect("Error displaying LED");
     }
@@ -248,6 +256,7 @@ impl FromStr for EffectsEnum {
 }
 
 lazy_static! {
+    static ref LAST_MODE: Mutex<StripMode> = Mutex::new(StripMode::Effect("rainbow".to_string()));
     static ref MODE: Mutex<StripMode> = Mutex::new(StripMode::Off);
     static ref BOUNCE: Mutex<strip::Bounce> =
         Mutex::new(strip::Bounce::new(COUNT, None, None, None, None, None));
