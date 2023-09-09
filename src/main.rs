@@ -43,20 +43,5 @@ async fn main() {
 
     let mut rainbow = effects::Rainbow::new(55, None);
 
-    light_strip::LightStrip::new(&conf, None).run().await;
-
-    loop {
-        for _ in 0..360 {
-            let pixels = rainbow
-                .next()
-                .unwrap()
-                .iter_mut()
-                .map(|x| Rgb::new(x.red, x.green, x.blue))
-                .collect::<Vec<Rgb>>();
-            led.set_page(0, pixels).expect("Error setting page");
-
-            led.refresh(0).expect("Error displaying LED");
-            std::thread::sleep(std::time::Duration::from_millis(200));
-        }
-    }
+    light_strip::LightStrip::new(&conf, None, led).run().await;
 }

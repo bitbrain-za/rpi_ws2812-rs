@@ -22,7 +22,7 @@ pub struct LightStripMqtt {
     rgb: bool,
     color_temp: bool,
     effect: bool,
-    effect_list: Vec<String>,
+    pub effect_list: Vec<String>,
     schema: String,
     optimistic: bool,
     icon: String,
@@ -49,7 +49,7 @@ impl Default for LightStripMqtt {
             rgb: true,
             color_temp: true,
             effect: true,
-            effect_list: vec!["Rainbow".to_string(), "Pulse".to_string()],
+            effect_list: vec!["test".to_string(), "test2".to_string()],
             schema: "json".to_string(),
             optimistic: false,
             icon: "mdi:lightbulb".to_string(),
@@ -149,6 +149,113 @@ impl LightStripMqtt {
             effect: effect.map(|e| e.to_string()),
             color_temp: color_temp.map(|c| c as u16),
         })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum StripMode {
+    Colour(u8, u8, u8),
+    Effect(String),
+    Brightness(u8),
+    ColourTemp(u8),
+    Off,
+}
+
+impl StripMode {
+    pub fn to_state_message(&self, mqtt: &LightStripMqtt) -> (String, String) {
+        match self {
+            StripMode::Off => {
+                let payload = "{\"state\": \"OFF\"}".to_string();
+                let topic = mqtt.state_topic.clone();
+
+                (topic, payload)
+            }
+            StripMode::Colour(r, g, b) => {
+                let payload = format!(
+                    "{{\"state\": \"ON\", \"color\": {{\"r\": {}, \"g\": {}, \"b\": {}}}}}",
+                    r, g, b
+                );
+                let topic = mqtt.state_topic.clone();
+
+                (topic, payload)
+            }
+            StripMode::Effect(effect) => {
+                let payload = format!("{{\"state\": \"ON\", \"effect\": \"{}\"}}", effect);
+                let topic = mqtt.state_topic.clone();
+
+                (topic, payload)
+            }
+            StripMode::Brightness(brightness) => {
+                let payload = format!("{{\"state\": \"ON\", \"brightness\": {}}}", brightness);
+                let topic = mqtt.state_topic.clone();
+
+                (topic, payload)
+            }
+            StripMode::ColourTemp(color_temp) => {
+                let payload = format!("{{\"state\": \"ON\", \"color_temp\": {}}}", color_temp);
+                let topic = mqtt.state_topic.clone();
+
+                (topic, payload)
+            }
+        }
+    }
+}
+
+impl FromStr for StripMode {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let message = serde_json::from_str::<serde_json::Value>(s).map_err(|e| e.to_string())?;
+
+        let state = message["state"]
+            .as_str()
+            .ok_or("No state found".to_string())?;
+        let brightness = message["brightness"].as_u64();
+        let color = message["color"].as_object();
+        let effect = message["effect"].as_str();
+        let color_temp = message["color_temp"].as_u64();
+
+        if "OFF" == state.to_uppercase().as_str() {
+            return Ok(StripMode::Off);
+        }
+        if "ON" != state.to_uppercase().as_str() {
+            return Err("Unknown state".to_string());
+        }
+
+        if let Some(color) = color {
+            let r = color["r"].as_u64().unwrap() as u8;
+            let g = color["g"].as_u64().unwrap() as u8;
+            let b = color["b"].as_u64().unwrap() as u8;
+            return Ok(StripMode::Colour(r, g, b));
+        }
+
+        if let Some(effect) = effect {
+            return Ok(StripMode::Effect(effect.to_string()));
+        }
+
+        if let Some(brightness) = brightness {
+            return Ok(StripMode::Brightness(brightness as u8));
+        }
+
+        if let Some(color_temp) = color_temp {
+            return Ok(StripMode::ColourTemp(color_temp as u8));
+        }
+
+        Err("Unknown state".to_string())
+    }
+}
+
+impl fmt::Display for StripMode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            StripMode::Off => write!(f, "OFF"),
+            StripMode::Colour(r, g, b) => {
+                write!(f, "ON: Colour: r: {}, g: {}, b: {}", r, g, b)
+            }
+            StripMode::Effect(effect) => write!(f, "ON: Effect: {}", effect),
+            StripMode::Brightness(brightness) => write!(f, "ON: Brightness: {}", brightness),
+            StripMode::ColourTemp(color_temp) => write!(f, "ON: Colour Temp: {}", color_temp),
+        }
     }
 }
 

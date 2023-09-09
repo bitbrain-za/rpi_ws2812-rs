@@ -1,20 +1,30 @@
 use crate::config;
-use crate::homeassistant::mqtt::{LightStripMqtt, LightStripState};
+use crate::homeassistant::mqtt::{LightStripMqtt, StripMode};
+use crate::ws2812::{Rgb, Strip};
+use lazy_static::lazy_static;
 use rumqttc::{AsyncClient, MqttOptions, QoS};
 use serde::{Deserialize, Serialize};
+use smart_led_effects::strip::Effect;
+use smart_led_effects::{strip, Srgb};
 use std::default::Default;
 use std::fmt;
+use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
 use std::time::Duration;
 use tokio::task;
+use tokio::time::sleep;
+
+const COUNT: usize = 55;
+const UPDATE_INTERVAL: Duration = Duration::from_millis(100);
 
 pub struct LightStrip {
-    config: config::Config,
     mqtt_options: MqttOptions,
     stop: AtomicBool,
     command_topic: String,
     state: LightState,
     ha: LightStripMqtt,
+    strip: Strip,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -46,7 +56,7 @@ impl fmt::Display for LightState {
 }
 
 impl LightStrip {
-    pub fn new(config: &config::Config, ha: Option<LightStripMqtt>) -> LightStrip {
+    pub fn new(config: &config::Config, ha: Option<LightStripMqtt>, strip: Strip) -> LightStrip {
         let mut mqtt_options = MqttOptions::new(
             &config.id,
             &config.mqtt_config.broker,
@@ -61,39 +71,53 @@ impl LightStrip {
             config.mqtt_config.port
         );
 
-        let ha = match ha {
+        let mut ha = match ha {
             Some(ha) => ha,
             None => LightStripMqtt::default(),
         };
 
+        ha.effect_list = strip::list();
+
         LightStrip {
-            config: config.clone(),
             mqtt_options,
             stop: AtomicBool::new(false),
             command_topic: format!("{}/set", config.base_topic()),
             state: LightState::default(),
             ha,
+            strip,
         }
     }
 
-    pub async fn run(&self) {
+    pub async fn run(&mut self) {
         let (mut client, mut connection) = AsyncClient::new(self.mqtt_options.clone(), 1);
 
+        log::info!("Subscribing to {}", self.command_topic);
         client
             .subscribe(&self.command_topic, QoS::AtMostOnce)
             .await
             .expect("Error subscribing");
 
+        let ha2 = self.ha.clone();
+        let state_updater = client.clone();
         task::spawn(async move {
             while let Ok(notification) = connection.poll().await {
-                log::debug!("Received notification: {:?}", notification);
-
                 let message = match notification {
                     rumqttc::Event::Incoming(rumqttc::Packet::Publish(p)) => p,
                     _ => continue,
                 };
                 let message = String::from_utf8(message.payload.to_vec()).unwrap();
                 log::debug!("Received message: {}", message);
+
+                match StripMode::from_str(&message) {
+                    Ok(state) => {
+                        LightStrip::handle_state_change(&state).await;
+                        let resp = state.to_state_message(&ha2);
+                        LightStrip::publish(&state_updater, &resp.0, &resp.1).await;
+                    }
+                    Err(e) => {
+                        log::error!("Error parsing message: {:?}", e);
+                    }
+                }
             }
         });
 
@@ -103,9 +127,14 @@ impl LightStrip {
         let (topic, payload) = self.ha.set_online();
         LightStrip::publish(&client, &topic, &payload).await;
 
-        self.update_state_topic(&client).await;
+        let state = MODE.lock().unwrap().clone();
+        let resp = state.to_state_message(&self.ha);
+        LightStrip::publish(&client, &resp.0, &resp.1).await;
 
-        while !self.stop.load(Ordering::Relaxed) {}
+        while !self.stop.load(Ordering::Relaxed) {
+            self.implement_state().await;
+            sleep(UPDATE_INTERVAL).await;
+        }
     }
 
     async fn publish(client: &AsyncClient, topic: &String, message: &String) {
@@ -119,22 +148,120 @@ impl LightStrip {
         }
     }
 
-    async fn update_state_topic(&self, client: &AsyncClient) {
-        let topic = format!("{}/{}/state", self.config.mqtt_config.topic, self.config.id);
-        let message = format!("{}", self.state);
-        LightStrip::publish(client, &topic, &message).await;
+    async fn handle_state_change(state: &StripMode) {
+        log::debug!("State change: {}", state);
+        let mut mode = MODE.lock().unwrap();
+        *mode = state.clone();
+    }
+
+    async fn implement_state(&mut self) {
+        let mode = MODE.lock().unwrap().clone();
+        match mode {
+            StripMode::Off => {
+                let _ = self.strip.clear(0);
+            }
+            StripMode::Effect(effect) => {}
+            StripMode::Colour(r, g, b) => {
+                let _ = self.strip.fill(0, &Rgb::new(r, g, b));
+            }
+            StripMode::Brightness(brightness) => {}
+            StripMode::ColourTemp(color_temp) => {}
+        }
+        self.strip.refresh(0).expect("Error displaying LED");
+    }
+
+    fn get_effect(index: EffectsEnum) -> Vec<Srgb<u8>> {
+        match index {
+            EffectsEnum::Bounce => BOUNCE.lock().unwrap().next().unwrap(),
+            EffectsEnum::Rainbow => RAINBOW.lock().unwrap().next().unwrap(),
+            EffectsEnum::Breathe => BREATHE.lock().unwrap().next().unwrap(),
+            EffectsEnum::Cycle => CYCLE.lock().unwrap().next().unwrap(),
+            EffectsEnum::Fire => FIRE.lock().unwrap().next().unwrap(),
+            EffectsEnum::Meteor => METEOR.lock().unwrap().next().unwrap(),
+            EffectsEnum::RunningLights => RUNNING_LIGHTS.lock().unwrap().next().unwrap(),
+            EffectsEnum::Cylon => CYLON.lock().unwrap().next().unwrap(),
+            EffectsEnum::Timer => TIMER.lock().unwrap().next().unwrap(),
+            EffectsEnum::Twinkle => TWINKLE.lock().unwrap().next().unwrap(),
+            EffectsEnum::Sparkle => SPARKLE.lock().unwrap().next().unwrap(),
+            EffectsEnum::Snow => SNOW.lock().unwrap().next().unwrap(),
+            EffectsEnum::Wipe => WIPE.lock().unwrap().next().unwrap(),
+        }
     }
 }
 
-impl Default for LightStrip {
-    fn default() -> Self {
-        let config = config::Config::default();
-        LightStrip::new(&config, None)
+enum EffectsEnum {
+    Bounce,
+    Rainbow,
+    Breathe,
+    Cycle,
+    Fire,
+    Meteor,
+    RunningLights,
+    Cylon,
+    Timer,
+    Twinkle,
+    Sparkle,
+    Snow,
+    Wipe,
+}
+
+impl FromStr for EffectsEnum {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "bounce" => Ok(EffectsEnum::Bounce),
+            "rainbow" => Ok(EffectsEnum::Rainbow),
+            "breathe" => Ok(EffectsEnum::Breathe),
+            "cycle" => Ok(EffectsEnum::Cycle),
+            "fire" => Ok(EffectsEnum::Fire),
+            "meteor" => Ok(EffectsEnum::Meteor),
+            "runninglights" => Ok(EffectsEnum::RunningLights),
+            "cylon" => Ok(EffectsEnum::Cylon),
+            "timer" => Ok(EffectsEnum::Timer),
+            "twinkle" => Ok(EffectsEnum::Twinkle),
+            "sparkle" => Ok(EffectsEnum::Sparkle),
+            "snow" => Ok(EffectsEnum::Snow),
+            "wipe" => Ok(EffectsEnum::Wipe),
+            _ => Err(format!("Unknown effect: {}", s)),
+        }
     }
 }
 
-impl fmt::Display for LightStrip {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "LightStrip {{ mqtt: {}}}", self.config.mqtt_config)
-    }
+lazy_static! {
+    static ref MODE: Mutex<StripMode> = Mutex::new(StripMode::Off);
+    static ref BOUNCE: Mutex<strip::Bounce> =
+        Mutex::new(strip::Bounce::new(COUNT, None, None, None, None, None));
+    static ref RAINBOW: Mutex<strip::Rainbow> = Mutex::new(strip::Rainbow::new(COUNT, None));
+    static ref BREATHE: Mutex<strip::Breathe> = Mutex::new(strip::Breathe::new(COUNT, None, None));
+    static ref CYCLE: Mutex<strip::Cycle> = Mutex::new(strip::Cycle::new(COUNT, None));
+    static ref FIRE: Mutex<strip::Fire> = Mutex::new(strip::Fire::new(COUNT, None, None));
+    static ref METEOR: Mutex<strip::Meteor> =
+        Mutex::new(strip::Meteor::new(COUNT, None, None, None));
+    static ref RUNNING_LIGHTS: Mutex<strip::RunningLights> =
+        Mutex::new(strip::RunningLights::new(COUNT, None, false));
+    static ref CYLON: Mutex<strip::Cylon> = Mutex::new(strip::Cylon::new(
+        COUNT,
+        Srgb::<u8>::new(255, 0, 0),
+        None,
+        None
+    ));
+    static ref TIMER: Mutex<strip::Timer> = Mutex::new(strip::Timer::new(
+        COUNT,
+        std::time::Duration::from_millis(5000),
+        None,
+        None,
+        None,
+        true
+    ));
+    static ref TWINKLE: Mutex<strip::Twinkle> =
+        Mutex::new(strip::Twinkle::new(COUNT, None, None, None, None));
+    static ref SPARKLE: Mutex<strip::Twinkle> = Mutex::new(strip::Twinkle::sparkle(COUNT, None));
+    static ref SNOW: Mutex<strip::SnowSparkle> =
+        Mutex::new(strip::SnowSparkle::new(COUNT, None, None, None, None));
+    static ref WIPE: Mutex<strip::Wipe> = Mutex::new(strip::Wipe::colour_wipe(
+        COUNT,
+        Srgb::<u8>::new(0, 255, 0),
+        false
+    ));
 }
