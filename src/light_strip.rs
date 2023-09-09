@@ -21,7 +21,6 @@ const UPDATE_INTERVAL: Duration = Duration::from_millis(100);
 pub struct LightStrip {
     mqtt_options: MqttOptions,
     stop: AtomicBool,
-    command_topic: String,
     state: LightState,
     ha: LightStripMqtt,
     strip: Strip,
@@ -81,7 +80,6 @@ impl LightStrip {
         LightStrip {
             mqtt_options,
             stop: AtomicBool::new(false),
-            command_topic: format!("{}/set", config.base_topic()),
             state: LightState::default(),
             ha,
             strip,
@@ -91,11 +89,24 @@ impl LightStrip {
     pub async fn run(&mut self) {
         let (mut client, mut connection) = AsyncClient::new(self.mqtt_options.clone(), 1);
 
-        log::info!("Subscribing to {}", self.command_topic);
+        log::info!("Subscribing to {}", self.ha.command_topic);
         client
-            .subscribe(&self.command_topic, QoS::AtMostOnce)
+            .subscribe(&self.ha.command_topic, QoS::AtMostOnce)
             .await
             .expect("Error subscribing");
+
+        let online_message = self.ha.set_online();
+        let online_client = client.clone();
+        task::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(5));
+
+            loop {
+                interval.tick().await;
+                interval.tick().await;
+                let (topic, payload) = online_message.clone();
+                LightStrip::publish(&online_client, &topic, &payload).await;
+            }
+        });
 
         let ha2 = self.ha.clone();
         let state_updater = client.clone();
