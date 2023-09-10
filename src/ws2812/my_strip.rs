@@ -1,5 +1,5 @@
 use crate::ws2812::{Rgb, Strip};
-use palette::{FromColor, Hsv};
+use palette::{Darken, FromColor, Hsv};
 use smart_led_effects::strip::EffectIterator;
 use smart_led_effects::{strip, Srgb};
 use std::collections::HashMap;
@@ -218,7 +218,14 @@ impl MyStrip {
                 if let Some(effect) = self.effects_map.get_mut(&effect_name) {
                     let pixels = effect.next();
 
-                    if let Some(pixels) = pixels {
+                    if let Some(mut pixels) = pixels {
+                        if 1.0 != self.brightness {
+                            pixels.iter_mut().for_each(|x| {
+                                let mut srgb: Srgb<f32> = x.into_format();
+                                srgb = srgb.darken(1.0 - self.brightness);
+                                *x = srgb.into_format();
+                            });
+                        }
                         let pixels = pixels
                             .iter()
                             .map(|x| Rgb::new(x.red, x.green, x.blue))
