@@ -80,11 +80,11 @@ impl LightStripMqtt {
         self.availability.set_online()
     }
 
-    pub fn set_offline(&self) -> (String, String) {
-        self.availability.set_offline()
+    pub fn _set_offline(&self) -> (String, String) {
+        self.availability._set_offline()
     }
 
-    pub fn set_color(&self, r: u8, g: u8, b: u8) -> (String, String) {
+    pub fn _set_color(&self, r: u8, g: u8, b: u8) -> (String, String) {
         let payload = format!(
             "{{\"state\": \"ON\", \"color\": {{\"r\": {}, \"g\": {}, \"b\": {}}}}}",
             r, g, b
@@ -94,62 +94,32 @@ impl LightStripMqtt {
         (topic, payload)
     }
 
-    pub fn set_brightness(&self, brightness: u8) -> (String, String) {
+    pub fn _set_brightness(&self, brightness: u8) -> (String, String) {
         let payload = format!("{{\"state\": \"ON\", \"brightness\": {}}}", brightness);
         let topic = self.state_topic.clone();
 
         (topic, payload)
     }
 
-    pub fn set_effect(&self, effect: &str) -> (String, String) {
+    pub fn _set_effect(&self, effect: &str) -> (String, String) {
         let payload = format!("{{\"state\": \"ON\", \"effect\": \"{}\"}}", effect);
         let topic = self.state_topic.clone();
 
         (topic, payload)
     }
 
-    pub fn set_off(&self) -> (String, String) {
+    pub fn _set_off(&self) -> (String, String) {
         let payload = "{{\"state\": \"OFF\"}}".to_string();
         let topic = self.state_topic.clone();
 
         (topic, payload)
     }
 
-    pub fn set_color_temp(&self, color_temp: u16) -> (String, String) {
+    pub fn _set_color_temp(&self, color_temp: u16) -> (String, String) {
         let payload = format!("{{\"state\": \"ON\", \"color_temp\": {}}}", color_temp);
         let topic = self.state_topic.clone();
 
         (topic, payload)
-    }
-
-    pub fn parse_state_message(&self, message: &str) -> Option<LightStripState> {
-        let message = match serde_json::from_str::<serde_json::Value>(message) {
-            Ok(m) => m,
-            Err(e) => {
-                log::error!("Error parsing message: {:?}", e);
-                return None;
-            }
-        };
-
-        let state = message["state"].as_str().unwrap();
-        let brightness = message["brightness"].as_u64();
-        let color = message["color"].as_object();
-        let effect = message["effect"].as_str();
-        let color_temp = message["color_temp"].as_u64();
-
-        Some(LightStripState {
-            state: state.to_string(),
-            brightness: brightness.map(|b| b as u8),
-            color: color.map(|c| {
-                (
-                    c["r"].as_u64().unwrap() as u8,
-                    c["g"].as_u64().unwrap() as u8,
-                    c["b"].as_u64().unwrap() as u8,
-                )
-            }),
-            effect: effect.map(|e| e.to_string()),
-            color_temp: color_temp.map(|c| c as u16),
-        })
     }
 }
 
@@ -181,7 +151,7 @@ impl StripMode {
                 let srgb: Srgb<u8> = Srgb::<u8>::new(*r, *g, *b);
                 let hsv = Hsv::from_color(srgb.into_format());
                 let value: f32 = hsv.value;
-                let brightness: u8 = (hsv.value * 255.0) as u8;
+                let brightness: u8 = (value * 255.0) as u8;
                 let payload = format!(
                     "{{\"state\": \"ON\", \"brightness\": {},  \"color\": {{\"r\": {}, \"g\": {}, \"b\": {}}}}}", 
                     brightness,
@@ -267,104 +237,6 @@ impl fmt::Display for StripMode {
             }
             StripMode::Effect(effect) => write!(f, "ON: Effect: {}", effect),
             StripMode::Brightness(brightness) => write!(f, "ON: Brightness: {}", brightness),
-        }
-    }
-}
-
-pub struct LightStripState {
-    pub state: String,
-    pub brightness: Option<u8>,
-    pub color: Option<(u8, u8, u8)>,
-    pub effect: Option<String>,
-    pub color_temp: Option<u16>,
-}
-
-impl LightStripState {
-    pub fn to_state_message(&self, mqtt: &LightStripMqtt) -> (String, String) {
-        match self.state.as_str() {
-            "ON" => {
-                let mut payload = "{\"state\": \"ON\"".to_string();
-                if let Some(brightness) = self.brightness {
-                    payload.push_str(&format!(", \"brightness\": {}", brightness));
-                }
-                if let Some(color) = self.color {
-                    payload.push_str(&format!(
-                        ", \"color\": {{\"r\": {}, \"g\": {}, \"b\": {}}}",
-                        color.0, color.1, color.2
-                    ));
-                }
-                if let Some(effect) = &self.effect {
-                    payload.push_str(&format!(", \"effect\": \"{}\"", effect));
-                }
-                if let Some(color_temp) = self.color_temp {
-                    payload.push_str(&format!(", \"color_temp\": {}", color_temp));
-                }
-                payload.push_str("}");
-                let topic = mqtt.state_topic.clone();
-
-                (topic, payload)
-            }
-            _ => {
-                let payload = "{\"state\": \"OFF\"}".to_string();
-                let topic = mqtt.state_topic.clone();
-
-                (topic, payload)
-            }
-        }
-    }
-}
-
-impl FromStr for LightStripState {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let message = serde_json::from_str::<serde_json::Value>(s).map_err(|e| e.to_string())?;
-
-        let state = message["state"]
-            .as_str()
-            .ok_or("No state found".to_string())?;
-        let brightness = message["brightness"].as_u64();
-        let color = message["color"].as_object();
-        let effect = message["effect"].as_str();
-        let color_temp = message["color_temp"].as_u64();
-
-        Ok(LightStripState {
-            state: state.to_string(),
-            brightness: brightness.map(|b| b as u8),
-            color: color.map(|c| {
-                (
-                    c["r"].as_u64().unwrap() as u8,
-                    c["g"].as_u64().unwrap() as u8,
-                    c["b"].as_u64().unwrap() as u8,
-                )
-            }),
-            effect: effect.map(|e| e.to_string()),
-            color_temp: color_temp.map(|c| c as u16),
-        })
-    }
-}
-
-impl fmt::Display for LightStripState {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.state.to_uppercase().as_str() {
-            "OFF" => write!(f, "OFF"),
-            "ON" => {
-                let mut s = "ON".to_string();
-                if let Some(brightness) = self.brightness {
-                    s.push_str(&format!(" brightness: {}", brightness));
-                }
-                if let Some(color) = self.color {
-                    s.push_str(&format!(" color: {:?}", color));
-                }
-                if let Some(effect) = &self.effect {
-                    s.push_str(&format!(" effect: {}", effect));
-                }
-                if let Some(color_temp) = self.color_temp {
-                    s.push_str(&format!(" color_temp: {}", color_temp));
-                }
-                write!(f, "{}", s)
-            }
-            _ => write!(f, "Unknown state"),
         }
     }
 }

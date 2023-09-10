@@ -35,10 +35,6 @@ impl Config {
             .map_err(|e| format!("Failed to write config file: {}", e))?;
         Ok(())
     }
-
-    pub fn base_topic(&self) -> String {
-        format!("{}/{}", self.mqtt_config.topic, self.id)
-    }
 }
 
 impl fmt::Display for Config {

@@ -22,7 +22,6 @@ pub struct LightStrip {
     stop: AtomicBool,
     ha: LightStripMqtt,
     strip: Strip,
-    state: StripMode,
 }
 
 impl LightStrip {
@@ -53,12 +52,11 @@ impl LightStrip {
             stop: AtomicBool::new(false),
             ha,
             strip,
-            state: StripMode::Off,
         }
     }
 
     pub async fn run(&mut self) {
-        let (mut client, mut connection) = AsyncClient::new(self.mqtt_options.clone(), 1);
+        let (client, mut connection) = AsyncClient::new(self.mqtt_options.clone(), 1);
 
         log::info!("Subscribing to {}", self.ha.command_topic);
         client
@@ -69,11 +67,8 @@ impl LightStrip {
         let online_message = self.ha.set_online();
         let online_client = client.clone();
         task::spawn(async move {
-            let mut interval = tokio::time::interval(Duration::from_secs(5));
-
             loop {
-                interval.tick().await;
-                interval.tick().await;
+                sleep(Duration::from_secs(60)).await;
                 let (topic, payload) = online_message.clone();
                 LightStrip::publish(&online_client, &topic, &payload).await;
             }
@@ -168,7 +163,7 @@ impl LightStrip {
             *last_mode = mode.clone();
         }
 
-        return Some(mode.clone());
+        Some(mode.clone())
     }
 
     async fn implement_state(&mut self) {
@@ -192,7 +187,7 @@ impl LightStrip {
             StripMode::Colour(r, g, b) => {
                 let _ = self.strip.fill(0, &Rgb::new(r, g, b));
             }
-            StripMode::Brightness(brightness) => {}
+            StripMode::Brightness(_brightness) => {}
         }
         self.strip.refresh(0).expect("Error displaying LED");
     }

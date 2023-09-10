@@ -27,7 +27,7 @@ impl Availability {
         (topic, payload)
     }
 
-    pub fn set_offline(&self) -> (String, String) {
+    pub fn _set_offline(&self) -> (String, String) {
         let payload = format!("{{\"state\": \"{}\"}}", self.payload_not_available);
         let topic = self.topic.clone();
 

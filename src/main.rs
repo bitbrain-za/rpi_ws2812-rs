@@ -3,15 +3,12 @@ use simple_logger::SimpleLogger;
 use std::env;
 use systemd_journal_logger::JournalLog;
 mod ws2812;
-use crate::ws2812::{Rgb, Strip};
+use crate::ws2812::Strip;
 use rppal::spi::{Bus, SlaveSelect};
 
 mod config;
 mod homeassistant;
 mod light_strip;
-
-use smart_led_effects::strip as effects;
-use smart_led_effects::strip::Effect;
 
 #[tokio::main]
 async fn main() {
@@ -40,8 +37,6 @@ async fn main() {
     let mut led = Strip::new(Bus::Spi0, SlaveSelect::Ss0, 55, 2).expect("Error creating strip");
     let _ = led.clear(0);
     let _ = led.clear(1);
-
-    let mut rainbow = effects::Rainbow::new(55, None);
 
     light_strip::LightStrip::new(&conf, None, led).run().await;
 }
