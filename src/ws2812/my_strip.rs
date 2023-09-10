@@ -145,7 +145,7 @@ impl MyStrip {
         }
     }
 
-    pub fn set_temperature(&mut self, mired: u64) {
+    pub fn _set_temperature(&mut self, mired: u64) {
         let kelvin = 1000000 / mired as i64;
         let rgb: colortemp::RGB = colortemp::temp_to_rgb(kelvin);
         self.set_rgb(rgb.r as u8, rgb.g as u8, rgb.b as u8);
@@ -163,7 +163,7 @@ impl MyStrip {
         }
     }
 
-    pub fn get_effect_pixels(&mut self) -> Option<Vec<Srgb<u8>>> {
+    pub fn _get_effect_pixels(&mut self) -> Option<Vec<Srgb<u8>>> {
         match &self.mode {
             RunMode::Dynamic(e) => match self.effects_map.get_mut(e) {
                 Some(effect) => effect.next(),
@@ -178,7 +178,7 @@ impl MyStrip {
         self.mode = RunMode::Dynamic(effect.to_string());
     }
 
-    pub fn list_effects(&self) -> Vec<String> {
+    pub fn _list_effects(&self) -> Vec<String> {
         self.effects_map.keys().cloned().collect()
     }
 

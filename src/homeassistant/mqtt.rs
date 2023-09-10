@@ -1,6 +1,5 @@
 use super::availability::Availability;
 use super::device::Device;
-use palette::{FromColor, Hsv, Srgb};
 use serde::{Deserialize, Serialize};
 use std::{fmt, str::FromStr};
 
@@ -132,54 +131,6 @@ pub enum StripMode {
     Effect(String),
     Brightness(u8),
     Off,
-}
-
-impl StripMode {
-    pub fn to_state_message(&self, mqtt: &LightStripMqtt) -> (String, String) {
-        match self {
-            StripMode::On => {
-                let payload = "{\"state\": \"OFF\"}".to_string();
-                let topic = mqtt.state_topic.clone();
-
-                (topic, payload)
-            }
-            StripMode::Off => {
-                let payload = "{\"state\": \"OFF\"}".to_string();
-                let topic = mqtt.state_topic.clone();
-
-                (topic, payload)
-            }
-            StripMode::Colour(r, g, b) => {
-                let srgb: Srgb<u8> = Srgb::<u8>::new(*r, *g, *b);
-                let hsv = Hsv::from_color(srgb.into_format());
-                let value: f32 = hsv.value;
-                let brightness: u8 = (value * 255.0) as u8;
-                let payload = format!(
-                    "{{\"state\": \"ON\", \"brightness\": {},  \"color\": {{\"r\": {}, \"g\": {}, \"b\": {}}}}}", 
-                    brightness,
-                    r, g, b
-                );
-                let topic = mqtt.state_topic.clone();
-
-                (topic, payload)
-            }
-            StripMode::Effect(effect) => {
-                let payload = format!(
-                    "{{\"state\": \"ON\", \"brightness\": 255, \"effect\": \"{}\"}}",
-                    effect
-                );
-                let topic = mqtt.state_topic.clone();
-
-                (topic, payload)
-            }
-            StripMode::Brightness(brightness) => {
-                let payload = format!("{{\"state\": \"ON\", \"brightness\": {}}}", brightness);
-                let topic = mqtt.state_topic.clone();
-
-                (topic, payload)
-            }
-        }
-    }
 }
 
 impl FromStr for StripMode {
