@@ -1002,8 +1002,6 @@ checksum = "62bb4feee49fdd9f707ef802e22365a35de4b7b299de4763d44bfea899442ff9"
 [[package]]
 name = "smart_led_effects"
 version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "960fea36202dd0530c22e24148c19085cb1bc6e5e33eb24580cdc59bb56f3e0c"
 dependencies = [
  "palette",
  "rand",

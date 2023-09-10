@@ -1,7 +1,6 @@
 use crate::ws2812::{Rgb, Strip};
-use lazy_static::lazy_static;
 use palette::{FromColor, Hsv};
-use smart_led_effects::strip::Effect;
+use smart_led_effects::strip::EffectIterator;
 use smart_led_effects::{strip, Srgb};
 use std::collections::HashMap;
 
@@ -16,14 +15,16 @@ pub struct MyStrip {
     pub mode: RunMode,
     pub brightness: f32,
 
-    effects_map: HashMap<String, Box<dyn Effect>>,
+    effects_map: HashMap<String, Box<dyn EffectIterator>>,
     previous_mode: RunMode,
     previous_brightness: f32,
+
+    strip: Strip,
 }
 
 impl MyStrip {
-    pub fn new(count: usize) -> Self {
-        let mut effects_map: HashMap<String, Box<dyn Effect>> = HashMap::new();
+    pub fn new(count: usize, strip: Strip) -> Self {
+        let mut effects_map: HashMap<String, Box<dyn EffectIterator>> = HashMap::new();
         effects_map.insert(
             "rainbow".to_string(),
             Box::new(strip::Rainbow::new(count, None)),
@@ -99,6 +100,7 @@ impl MyStrip {
             effects_map,
             previous_mode: RunMode::Off,
             previous_brightness: 1.0,
+            strip,
         }
     }
 
@@ -121,17 +123,18 @@ impl MyStrip {
         self.brightness = brightness;
     }
 
-    pub fn set_hs(&mut self, h: f32, s: f32) {
+    pub fn _set_hs(&mut self, h: f32, s: f32) {
         self.mode = RunMode::Static(h, s);
     }
 
     pub fn set_rgb(&mut self, r: u8, g: u8, b: u8) {
         let srgb: Srgb<u8> = Srgb::<u8>::new(r, g, b);
         let hsv = Hsv::from_color(srgb.into_format());
+        self.brightness = hsv.value;
         self.mode = RunMode::Static(hsv.hue.into_inner(), hsv.saturation);
     }
 
-    pub fn get_hsv(&self) -> Option<Hsv<u8>> {
+    pub fn _get_hsv(&self) -> Option<Hsv<u8>> {
         match self.mode {
             RunMode::Static(h, s) => {
                 let hsv = Hsv::new(h, s, self.brightness);
@@ -170,8 +173,9 @@ impl MyStrip {
         }
     }
 
-    pub fn set_effect(&mut self, effect: String) {
-        self.mode = RunMode::Dynamic(effect);
+    pub fn set_effect(&mut self, effect: &str) {
+        log::debug!("Setting effect: {}", effect);
+        self.mode = RunMode::Dynamic(effect.to_string());
     }
 
     pub fn list_effects(&self) -> Vec<String> {
@@ -179,23 +183,54 @@ impl MyStrip {
     }
 
     pub fn state_message(&self) -> String {
+        let brightness = (self.brightness * 255.0) as u8;
         match &self.mode {
             RunMode::Static(_h, _s) => {
                 let rgb = self.get_rgb().unwrap();
                 let payload = format!(
                     "{{\"state\": \"ON\", \"brightness\": {}, \"color\": {{\"r\": {}, \"g\": {}, \"b\": {}}}}}",
-                    self.brightness, rgb.0, rgb.1, rgb.2
+                    brightness, rgb.0, rgb.1, rgb.2
                 );
                 payload
             }
             RunMode::Dynamic(e) => {
                 let payload = format!(
                     "{{\"state\": \"ON\", \"brightness\": {}, \"effect\": \"{}\"}}",
-                    self.brightness, e
+                    brightness, e
                 );
                 payload
             }
             RunMode::Off => "{\"state\": \"OFF\"}".to_string(),
         }
+    }
+
+    pub fn update(&mut self) {
+        match &self.mode {
+            RunMode::Static(h, s) => {
+                let hsv = Hsv::new(*h, *s, self.brightness);
+                let srgb = Srgb::from_color(hsv).into_format::<u8>();
+                let rgb = Rgb::new(srgb.red, srgb.green, srgb.blue);
+                let _ = self.strip.clear(0);
+                let _ = self.strip.fill(0, &rgb);
+            }
+            RunMode::Dynamic(e) => {
+                let effect_name = e.to_lowercase();
+                if let Some(effect) = self.effects_map.get_mut(&effect_name) {
+                    let pixels = effect.next();
+
+                    if let Some(pixels) = pixels {
+                        let pixels = pixels
+                            .iter()
+                            .map(|x| Rgb::new(x.red, x.green, x.blue))
+                            .collect::<Vec<Rgb>>();
+                        self.strip.set_page(0, pixels).expect("Error setting page");
+                    }
+                }
+            }
+            RunMode::Off => {
+                let _ = self.strip.clear(0);
+            }
+        }
+        self.strip.refresh(0).expect("Error displaying LED");
     }
 }
