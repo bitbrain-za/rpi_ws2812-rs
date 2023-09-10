@@ -15,7 +15,7 @@ use tokio::task;
 use tokio::time::sleep;
 
 const COUNT: usize = 55;
-const UPDATE_INTERVAL: Duration = Duration::from_millis(100);
+const UPDATE_INTERVAL: Duration = Duration::from_millis(10);
 
 pub struct LightStrip {
     mqtt_options: MqttOptions,
@@ -32,7 +32,7 @@ impl LightStrip {
             config.mqtt_config.port,
         );
         mqtt_options.set_credentials(&config.mqtt_config.username, &config.mqtt_config.password);
-        mqtt_options.set_keep_alive(Duration::from_secs(5));
+        mqtt_options.set_keep_alive(Duration::from_secs(60));
 
         log::info!(
             "Connecting to broker: {}:{}",
