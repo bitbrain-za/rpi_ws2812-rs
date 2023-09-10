@@ -27,6 +27,7 @@ pub struct LightStripMqtt {
     schema: String,
     optimistic: bool,
     icon: String,
+    retain: bool,
 }
 
 impl Default for LightStripMqtt {
@@ -54,6 +55,7 @@ impl Default for LightStripMqtt {
             schema: "json".to_string(),
             optimistic: false,
             icon: "mdi:lightbulb".to_string(),
+            retain: true,
         }
     }
 }

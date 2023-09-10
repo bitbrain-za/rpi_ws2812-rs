@@ -62,16 +62,18 @@ impl LightStrip {
             .await
             .expect("Error subscribing");
 
+        log::info!("Starting Online thread");
         let online_message = self.ha.set_online();
         let online_client = client.clone();
         task::spawn(async move {
             loop {
                 sleep(Duration::from_secs(60)).await;
                 let (topic, payload) = online_message.clone();
-                LightStrip::publish(&online_client, &topic, &payload).await;
+                LightStrip::publish(&online_client, &topic, &payload, false).await;
             }
         });
 
+        log::info!("Starting State thread");
         task::spawn(async move {
             while let Ok(notification) = connection.poll().await {
                 let message = match notification {
@@ -93,22 +95,16 @@ impl LightStrip {
             }
         });
 
+        log::info!("Sending discovery message");
         let (disco_topic, disco_payload) = self.ha.discovery_message();
-        LightStrip::publish(&client, &disco_topic, &disco_payload).await;
-
-        let (topic, payload) = self.ha.set_online();
-        LightStrip::publish(&client, &topic, &payload).await;
-
-        let payload = self.strip.state_message();
-        let topic = self.ha.state_topic.clone();
-        LightStrip::publish(&client, &topic, &payload).await;
+        LightStrip::publish(&client, &disco_topic, &disco_payload, false).await;
 
         while !self.stop.load(Ordering::Relaxed) {
-            if let Some(state) = rx.recv().await {
+            if let Ok(state) = rx.try_recv() {
                 self.handle_state_change(&state);
                 let payload = self.strip.state_message();
                 let topic = self.ha.state_topic.clone();
-                LightStrip::publish(&client, &topic, &payload).await;
+                LightStrip::publish(&client, &topic, &payload, true).await;
             }
 
             self.strip.update();
@@ -116,11 +112,11 @@ impl LightStrip {
         }
     }
 
-    async fn publish(client: &AsyncClient, topic: &String, message: &String) {
-        log::debug!("Publishing message: {} to {}", message, topic);
+    async fn publish(client: &AsyncClient, topic: &String, message: &String, retain: bool) {
+        log::info!("Publishing message: {} to {}", message, topic);
 
         if let Err(e) = client
-            .publish(topic, QoS::AtLeastOnce, false, message.as_bytes().to_vec())
+            .publish(topic, QoS::AtLeastOnce, retain, message.as_bytes().to_vec())
             .await
         {
             log::error!("Error publishing message: {:?}", e);
@@ -128,7 +124,7 @@ impl LightStrip {
     }
 
     fn handle_state_change(&mut self, state: &StripMode) {
-        log::debug!("State change: {}", state);
+        log::info!("State change: {}", state);
 
         match state {
             StripMode::Brightness(brightness) => {
