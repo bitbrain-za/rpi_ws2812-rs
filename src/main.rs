@@ -1,5 +1,5 @@
 use log::LevelFilter;
-use simple_logger::SimpleLogger;
+// use simple_logger::SimpleLogger;
 use std::env;
 use systemd_journal_logger::JournalLog;
 mod ws2812;
@@ -12,9 +12,9 @@ mod light_strip;
 
 #[tokio::main]
 async fn main() {
-    // JournalLog::default().install().unwrap();
-    SimpleLogger::new().init().unwrap();
-    log::set_max_level(LevelFilter::Debug);
+    JournalLog::default().install().unwrap();
+    // SimpleLogger::new().init().unwrap();
+    log::set_max_level(LevelFilter::Info);
     let args: Vec<String> = env::args().collect();
     log::debug!("{:?}", args);
 
