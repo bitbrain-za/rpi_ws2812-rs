@@ -67,9 +67,9 @@ impl LightStrip {
         let online_client = client.clone();
         task::spawn(async move {
             loop {
-                sleep(Duration::from_secs(60)).await;
                 let (topic, payload) = online_message.clone();
                 LightStrip::publish(&online_client, &topic, &payload, false).await;
+                sleep(Duration::from_secs(60)).await;
             }
         });
 
@@ -97,7 +97,7 @@ impl LightStrip {
 
         log::info!("Sending discovery message");
         let (disco_topic, disco_payload) = self.ha.discovery_message();
-        LightStrip::publish(&client, &disco_topic, &disco_payload, false).await;
+        LightStrip::publish(&client, &disco_topic, &disco_payload, true).await;
 
         while !self.stop.load(Ordering::Relaxed) {
             if let Ok(state) = rx.try_recv() {
