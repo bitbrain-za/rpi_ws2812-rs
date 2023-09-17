@@ -25,74 +25,10 @@ pub struct MyStrip {
 impl MyStrip {
     pub fn new(count: usize, strip: Strip) -> Self {
         let mut effects_map: HashMap<String, Box<dyn EffectIterator>> = HashMap::new();
-        effects_map.insert(
-            "rainbow".to_string(),
-            Box::new(strip::Rainbow::new(count, None)),
-        );
-        effects_map.insert(
-            "bounce".to_string(),
-            Box::new(strip::Bounce::new(count, None, None, None, None, None)),
-        );
-        effects_map.insert(
-            "breathe".to_string(),
-            Box::new(strip::Breathe::new(count, None, None)),
-        );
-        effects_map.insert(
-            "cycle".to_string(),
-            Box::new(strip::Cycle::new(count, None)),
-        );
-        effects_map.insert(
-            "fire".to_string(),
-            Box::new(strip::Fire::new(count, None, None)),
-        );
-        effects_map.insert(
-            "meteor".to_string(),
-            Box::new(strip::Meteor::new(count, None, None, None)),
-        );
-        effects_map.insert(
-            "running_lights".to_string(),
-            Box::new(strip::RunningLights::new(count, None, false)),
-        );
-        effects_map.insert(
-            "cylon".to_string(),
-            Box::new(strip::Cylon::new(
-                count,
-                Srgb::<u8>::new(255, 0, 0),
-                None,
-                None,
-            )),
-        );
-        effects_map.insert(
-            "timer".to_string(),
-            Box::new(strip::Timer::new(
-                count,
-                std::time::Duration::from_millis(5000),
-                None,
-                None,
-                None,
-                true,
-            )),
-        );
-        effects_map.insert(
-            "twinkle".to_string(),
-            Box::new(strip::Twinkle::new(count, None, None, None, None)),
-        );
-        effects_map.insert(
-            "sparkle".to_string(),
-            Box::new(strip::Twinkle::sparkle(count, None)),
-        );
-        effects_map.insert(
-            "snow".to_string(),
-            Box::new(strip::SnowSparkle::new(count, None, None, None, None)),
-        );
-        effects_map.insert(
-            "wipe".to_string(),
-            Box::new(strip::Wipe::colour_wipe(
-                count,
-                Srgb::<u8>::new(0, 255, 0),
-                false,
-            )),
-        );
+        let effects = strip::get_all_default_effects(count);
+        for effect in effects {
+            effects_map.insert(effect.name().to_string(), effect);
+        }
 
         Self {
             mode: RunMode::Off,
@@ -213,9 +149,8 @@ impl MyStrip {
                 let _ = self.strip.clear(0);
                 let _ = self.strip.fill(0, &rgb);
             }
-            RunMode::Dynamic(e) => {
-                let effect_name = e.to_lowercase();
-                if let Some(effect) = self.effects_map.get_mut(&effect_name) {
+            RunMode::Dynamic(effect_name) => {
+                if let Some(effect) = self.effects_map.get_mut(effect_name) {
                     let pixels = effect.next();
 
                     if let Some(mut pixels) = pixels {

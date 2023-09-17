@@ -16,7 +16,7 @@ systemd-journal-logger = "1.0.0"
 simple_logger = "4.2.0"
 tokio = { version = "1", features = ["full"] }
 uuid = { version = "1.4.1", features = ["v4"] }
-smart_led_effects = "0.1.2"
+smart_led_effects = "0.1.5"
 # smart_led_effects = {"path" = "../smart_led_effects"}
 lazy_static = "1.4.0"
 colortemp = "0.1.0"
